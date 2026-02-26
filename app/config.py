@@ -1,0 +1,2 @@
+AI_WEIGHT = 0.7
+RULE_WEIGHT = 0.3
