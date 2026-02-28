@@ -1,13 +1,18 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from app.services.ai_checker import check_text
+from app.services.model_router import ModelRouter
 
 router = APIRouter()
+model_router = ModelRouter()
 
-class Article(BaseModel):
+class AnalyzeRequest(BaseModel):
     text: str
 
 @router.post("/analyze")
-def analyze_article(article: Article):
-    result = check_text(article.text)
-    return {"result": result}
+def analyze(request: AnalyzeRequest):
+    result = model_router.analyze(request.text)
+
+    return {
+        "success": True,
+        "data": result
+    }

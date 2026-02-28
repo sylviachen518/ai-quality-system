@@ -1,12 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-from app.routers import analyze   # 根據你的實際 import 路徑調整
+from app.routers.analyze import router
 
 app = FastAPI()
 
-# ✅ 加在這裡（app 建立之後）
-
+# ✅ CORS 設定
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,5 +13,5 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ 再 include router
-app.include_router(analyze.router)
+# ✅ 加入 analyze router
+app.include_router(router)
