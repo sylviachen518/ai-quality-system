@@ -40,10 +40,16 @@ class QwenProvider(BaseProvider):
 
         result = response.json()
 
-        # 取得模型回傳文字
-        output_text = result["output"]["text"]
+        if "output" not in result:
+            raise ValueError(f"Unexpected API response: {result}")
 
-        # 嘗試提取 JSON 區塊
+        choices = result["output"].get("choices")
+
+        if not choices:
+            raise ValueError(f"No choices returned: {result}")
+
+        output_text = choices[0]["message"]["content"]
+
         match = re.search(r"\{.*\}", output_text, re.DOTALL)
 
         if not match:
@@ -51,5 +57,4 @@ class QwenProvider(BaseProvider):
 
         json_str = match.group(0)
 
-        # 轉成 dict
         return json.loads(json_str)
