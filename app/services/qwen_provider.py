@@ -1,3 +1,5 @@
+import json
+import re
 import requests
 from .base_provider import BaseProvider
 from app.config import QWEN_API_KEY
@@ -38,7 +40,16 @@ class QwenProvider(BaseProvider):
 
         result = response.json()
 
-        # ⚠ 這裡依實際回傳格式取值
+        # 取得模型回傳文字
         output_text = result["output"]["text"]
 
-        return eval(output_text)  # 建議之後改成 json.loads
+        # 嘗試提取 JSON 區塊
+        match = re.search(r"\{.*\}", output_text, re.DOTALL)
+
+        if not match:
+            raise ValueError(f"No JSON found in model response: {output_text}")
+
+        json_str = match.group(0)
+
+        # 轉成 dict
+        return json.loads(json_str)
