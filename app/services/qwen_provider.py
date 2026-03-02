@@ -65,12 +65,16 @@ class QwenProvider(BaseProvider):
         if "output" not in result:
             raise ValueError(f"Unexpected API response: {result}")
 
-        choices = result["output"].get("choices")
+        output = result.get("output", {})
 
-        if not choices:
-            raise ValueError(f"No choices returned: {result}")
+        if "text" in output:
+            output_text = output["text"]
 
-        output_text = choices[0]["message"]["content"]
+        elif "choices" in output:
+            output_text = output["choices"][0]["message"]["content"]
+
+        else:
+            raise ValueError(f"Unexpected API format: {result}")
 
         match = re.search(r"\{.*\}", output_text, re.DOTALL)
 
