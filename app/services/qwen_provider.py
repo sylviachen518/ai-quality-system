@@ -9,18 +9,40 @@ class QwenProvider(BaseProvider):
 
     def analyze(self, text: str) -> dict:
         prompt = f"""
-請分析以下新聞內容品質。
+        你是一位專業的繁體中文校對專家。
 
-請只回傳 JSON：
-{{
-  "score": 0-100,
-  "issues": [],
-  "suggestions": []
-}}
+        請檢查以下文章是否存在：
 
-文章：
-{text}
-"""
+        1. 用詞錯誤
+        2. 不自然搭配
+        3. 語意不完整
+        4. 重複詞語
+        5. 語法問題
+
+        ⚠ 不需要檢查簡體字（已由系統處理）
+
+        請回傳 JSON 格式：
+
+        {{
+          "errors": [
+            {{
+              "wrong": "錯誤文字",
+              "correct": "建議寫法",
+              "start": 文字開始索引,
+              "end": 文字結束索引,
+              "reason": "錯誤原因"
+            }}
+          ]
+        }}
+
+        若沒有問題，回傳：
+        {{
+          "errors": []
+        }}
+
+        文章：
+        {text}
+        """
 
         # ⚠ 這裡換成你實際千問 API endpoint
         response = requests.post(

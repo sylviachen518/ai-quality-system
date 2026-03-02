@@ -1,6 +1,9 @@
+from opencc import OpenCC
 from fastapi import APIRouter
 from pydantic import BaseModel
 from app.services.model_router import ModelRouter
+
+cc = OpenCC('s2t')
 
 router = APIRouter()
 model_router = ModelRouter()
@@ -8,11 +11,41 @@ model_router = ModelRouter()
 class AnalyzeRequest(BaseModel):
     text: str
 
+
+def detect_simplified(text):
+    errors = []
+
+    converted = cc.convert(text)
+
+    for i, (orig_char, conv_char) in enumerate(zip(text, converted)):
+        if orig_char != conv_char:
+            errors.append({
+                "wrong": orig_char,
+                "correct": conv_char,
+                "start": i,
+                "end": i + 1,
+                "reason": "簡體字，應改為繁體"
+            })
+
+    return errors
+
+
 @router.post("/analyze")
-def analyze(request: AnalyzeRequest):
-    result = model_router.analyze(request.text)
+async def analyze(req: AnalyzeRequest):
+
+    text = req.text
+
+    # ✅ 引擎 1：簡體檢測
+    simplified_errors = detect_simplified(text)
+
+    # ✅ 引擎 2：AI 檢測
+    ai_result = model_router.analyze(text)
+
+    ai_errors = ai_result.get("errors", [])
+
+    # ✅ 合併
+    all_errors = simplified_errors + ai_errors
 
     return {
-        "success": True,
-        "data": result
+        "errors": all_errors
     }
