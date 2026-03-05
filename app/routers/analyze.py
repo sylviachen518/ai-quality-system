@@ -8,6 +8,7 @@ cc = OpenCC('s2t')
 router = APIRouter()
 model_router = ModelRouter()
 
+
 class AnalyzeRequest(BaseModel):
     text: str
 
@@ -35,17 +36,22 @@ async def analyze(req: AnalyzeRequest):
 
     text = req.text
 
-    # ✅ 引擎 1：簡體檢測
+    # ✅ 1️⃣ 先做繁簡檢測（永遠執行）
     simplified_errors = detect_simplified(text)
 
-    # ✅ 引擎 2：AI 檢測
-    ai_result = model_router.analyze(text)
+    ai_errors = []
 
-    ai_errors = ai_result.get("errors", [])
+    # ✅ 2️⃣ 再嘗試 AI（就算失敗也不中止）
+    try:
+        ai_result = model_router.analyze(text)
+        ai_errors = ai_result.get("errors", [])
+    except Exception as e:
+        print("⚠ AI failed but system continues:", e)
 
-    # ✅ 合併
+    # ✅ 3️⃣ 合併結果
     all_errors = simplified_errors + ai_errors
 
     return {
+        "success": True,
         "errors": all_errors
     }
