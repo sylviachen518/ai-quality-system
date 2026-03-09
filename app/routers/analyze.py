@@ -60,7 +60,7 @@ async def analyze(req: AnalyzeRequest):
     all_errors = simplified_errors + ai_errors
 
     # ✅ 4️⃣ 白名單過濾
-    filtered_errors = apply_whitelist(all_errors)
+    filtered_errors = apply_whitelist(all_errors, text)
 
     return {
         "success": True,
