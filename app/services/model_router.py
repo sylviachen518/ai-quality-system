@@ -15,10 +15,18 @@ class ModelRouter:
             self.primary = GeminiProvider()
             self.fallback = QwenProvider()
 
-    def analyze(self, text: str) -> dict:
+    def analyze(self, text: str, system_prompt: str) -> dict:
+        """
+        text: 使用者文章
+        system_prompt: 校對規則（例如香港嚴格模式）
+        """
+
         try:
             print("Calling primary model...")
-            result = self.primary.analyze(text)
+            result = self.primary.analyze(
+                text=text,
+                system_prompt=system_prompt
+            )
             print("Primary model success.")
             return result
 
@@ -27,14 +35,18 @@ class ModelRouter:
 
             try:
                 print("Switching to fallback model...")
-                result = self.fallback.analyze(text)
+                result = self.fallback.analyze(
+                    text=text,
+                    system_prompt=system_prompt
+                )
                 print("Fallback model success.")
                 return result
 
             except Exception as e2:
                 print("Fallback model error:", repr(e2))
 
-                # 🔥 關鍵：不要吞錯誤，直接丟出去
                 raise Exception(
-                    f"Both models failed. Primary error: {repr(e)} | Fallback error: {repr(e2)}"
+                    f"Both models failed. "
+                    f"Primary error: {repr(e)} | "
+                    f"Fallback error: {repr(e2)}"
                 )

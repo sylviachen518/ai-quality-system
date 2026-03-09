@@ -7,38 +7,10 @@ from app.config import QWEN_API_KEY
 
 class QwenProvider(BaseProvider):
 
-    def analyze(self, text: str) -> dict:
+    def analyze(self, text: str, system_prompt: str) -> dict:
+
         prompt = f"""
-你是一位專業的繁體中文校對專家。
-
-請檢查以下文章是否存在：
-
-1. 用詞錯誤
-2. 不自然搭配
-3. 語意不完整
-4. 重複詞語
-5. 語法問題
-
-⚠ 不需要檢查簡體字（已由系統處理）
-
-請回傳 JSON 格式：
-
-{{
-  "errors": [
-    {{
-      "wrong": "錯誤文字",
-      "correct": "建議寫法",
-      "start": 文字開始索引,
-      "end": 文字結束索引,
-      "reason": "錯誤原因"
-    }}
-  ]
-}}
-
-若沒有問題，回傳：
-{{
-  "errors": []
-}}
+{system_prompt}
 
 文章：
 {text}
@@ -54,36 +26,75 @@ class QwenProvider(BaseProvider):
                 "model": "qwen-max",
                 "input": {
                     "prompt": prompt
+                },
+                "parameters": {
+                    "temperature": 0.1
                 }
             },
-            timeout=20
+            timeout=30
         )
 
-        # ✅ 先檢查 HTTP 狀態碼
         if response.status_code != 200:
-            raise Exception(f"Qwen API HTTP Error {response.status_code}: {response.text}")
+            raise Exception(
+                f"Qwen API HTTP {response.status_code}: {response.text}"
+            )
 
         result = response.json()
 
-        if "output" not in result:
-            raise Exception(f"Unexpected API response: {result}")
-
-        output = result["output"]
-
-        if "text" not in output:
-            raise Exception(f"No text returned: {result}")
-
-        output_text = output["text"]
-
-        # ✅ 抓 JSON 區塊
-        match = re.search(r"\{.*\}", output_text, re.DOTALL)
-
-        if not match:
-            raise Exception(f"No JSON found in model response: {output_text}")
-
-        json_str = match.group(0)
-
         try:
-            return json.loads(json_str)
+            output_text = result["output"]["text"]
         except Exception:
-            raise Exception(f"JSON parse failed: {json_str}")
+            raise Exception(f"Unexpected Qwen response: {result}")
+
+        return self._safe_parse_json(output_text)
+
+    # ✅ ✅ ✅ 強制 JSON 安全解析
+    def _safe_parse_json(self, output_text: str) -> dict:
+
+        # 1️⃣ 直接解析
+        try:
+            data = json.loads(output_text)
+            return self._validate_structure(data)
+        except Exception:
+            pass
+
+        # 2️⃣ 抓 JSON 區塊
+        match = re.search(r"\{.*\}", output_text, re.DOTALL)
+        if match:
+            json_str = match.group(0)
+            try:
+                data = json.loads(json_str)
+                return self._validate_structure(data)
+            except Exception:
+                pass
+
+        # 3️⃣ 最終保底
+        print("⚠ Qwen returned invalid JSON. Fallback to empty errors.")
+        return {"errors": []}
+
+    def _validate_structure(self, data: dict) -> dict:
+
+        if not isinstance(data, dict):
+            return {"errors": []}
+
+        errors = data.get("errors", [])
+
+        if not isinstance(errors, list):
+            return {"errors": []}
+
+        clean_errors = []
+
+        for err in errors:
+            if not isinstance(err, dict):
+                continue
+
+            if "wrong" not in err or "correct" not in err:
+                continue
+
+            clean_errors.append({
+                "wrong": str(err.get("wrong", "")),
+                "correct": str(err.get("correct", "")),
+                "reason": str(err.get("reason", ""))
+            })
+
+        return {"errors": clean_errors}
