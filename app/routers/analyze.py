@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 from app.services.model_router import ModelRouter
 from app.services.whitelist_engine import apply_whitelist
+from app.services.rule_engine import apply_rules
 
 cc = OpenCC('s2t')
 
@@ -85,6 +86,7 @@ HK_SEMANTIC_PROMPT = """
 """
 
 
+
 # ✅ 簡轉繁檢測
 def detect_simplified(text):
     errors = []
@@ -98,13 +100,14 @@ def detect_simplified(text):
                 "start": i,
                 "end": i + 1,
                 "reason": "簡體字",
-                "category": "tc_sc"
+                "category": "tc_sc",
+                "priority": 0
             })
 
     return errors
 
 
-# ✅ AI 安全執行器（穩定 fallback）
+# ✅ AI 呼叫
 def safe_ai_call(text, prompt, category):
     try:
         result = model_router.analyze(
@@ -115,25 +118,32 @@ def safe_ai_call(text, prompt, category):
         raw_errors = result.get("errors", [])
         clean = []
 
-        if isinstance(raw_errors, list):
-            for err in raw_errors:
-                if not isinstance(err, dict):
-                    continue
+        for err in raw_errors:
+            if not isinstance(err, dict):
+                continue
 
-                if "wrong" not in err or "correct" not in err:
-                    continue
+            wrong = err.get("wrong")
+            correct = err.get("correct")
 
-                clean.append({
-                    "wrong": err["wrong"],
-                    "correct": err["correct"],
-                    "reason": err.get("reason", ""),
-                    "category": category
-                })
+            if not wrong or not correct:
+                continue
+
+            index = text.find(wrong)
+
+            clean.append({
+                "wrong": wrong,
+                "correct": correct,
+                "reason": err.get("reason", ""),
+                "start": index if index != -1 else None,
+                "end": index + len(wrong) if index != -1 else None,
+                "category": category,
+                "priority": 80 if category == "ai" else 90
+            })
 
         return clean
 
     except Exception as e:
-        print(f"⚠ AI {category} failed:", e)
+        print("AI failed:", e)
         return []
 
 
@@ -143,7 +153,7 @@ def deduplicate_errors(errors):
     unique = []
 
     for err in errors:
-        key = (err.get("wrong"), err.get("correct"))
+        key = (err.get("start"), err.get("wrong"))
         if key not in seen:
             seen.add(key)
             unique.append(err)
@@ -151,44 +161,21 @@ def deduplicate_errors(errors):
     return unique
 
 
-# ✅ 計算段落位置優先級
-def compute_position_priority(text, error):
-    wrong = error.get("wrong")
-    if not wrong:
-        return 99
-
-    index = text.find(wrong)
-    if index == -1:
-        return 99
-
-    # 標題（第一行）
-    first_line_end = text.find("\n")
-    if first_line_end == -1:
-        first_line_end = len(text)
-
-    if index <= first_line_end:
-        return 0  # 最高優先
-
-    # 首段（前 300 字）
-    if index <= 300:
-        return 1
-
-    return 2
-
-
-# ✅ 排序（類型 + 位置）
+# ✅ 排序（位置 + rule priority + 類型）
 CATEGORY_PRIORITY = {
     "tc_sc": 0,
-    "ai": 1,
-    "semantic": 2
+    "rule": 1,
+    "ai": 2,
+    "semantic": 3
 }
 
 
-def sort_errors(errors, text):
+def sort_errors(errors):
     return sorted(
         errors,
         key=lambda e: (
-            compute_position_priority(text, e),
+            e.get("start", 99999),
+            e.get("priority", 99),
             CATEGORY_PRIORITY.get(e.get("category"), 99)
         )
     )
@@ -202,30 +189,30 @@ async def analyze(req: AnalyzeRequest):
     # 1️⃣ 簡轉繁
     simplified_errors = detect_simplified(text)
 
-    # 2️⃣ 嚴格 AI
-    strict_errors = safe_ai_call(
-        text,
-        HK_STRICT_PROMPT,
-        "ai"
+    # 2️⃣ Rule engine
+    rule_errors = apply_rules(text)
+
+    # 3️⃣ 嚴格 AI
+    strict_errors = safe_ai_call(text, HK_STRICT_PROMPT, "ai")
+
+    # 4️⃣ 語義 AI
+    semantic_errors = safe_ai_call(text, HK_SEMANTIC_PROMPT, "semantic")
+
+    # 5️⃣ 合併
+    all_errors = (
+        simplified_errors +
+        rule_errors +
+        strict_errors +
+        semantic_errors
     )
 
-    # 3️⃣ 語義 AI
-    semantic_errors = safe_ai_call(
-        text,
-        HK_SEMANTIC_PROMPT,
-        "semantic"
-    )
-
-    # 4️⃣ 合併
-    all_errors = simplified_errors + strict_errors + semantic_errors
-
-    # 5️⃣ 去重
+    # 6️⃣ 去重
     all_errors = deduplicate_errors(all_errors)
 
-    # 6️⃣ 排序（標題優先）
-    all_errors = sort_errors(all_errors, text)
+    # 7️⃣ 排序
+    all_errors = sort_errors(all_errors)
 
-    # 7️⃣ 白名單過濾
+    # 8️⃣ 白名單
     filtered_errors = apply_whitelist(all_errors, text)
 
     return {

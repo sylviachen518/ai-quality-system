@@ -1,63 +1,50 @@
-from app.services.dictionary_engine import check_dictionary
-from app.services.severity_engine import assign_severity
+# app/services/rule_engine.py
+
+import json
+import re
+from pathlib import Path
+
+RULE_FILE = Path("data/rules.json")
 
 
-def evaluate_spelling(title: str, content: str):
+# ✅ 讀取規則
+def load_rules():
+    if not RULE_FILE.exists():
+        return []
+
+    with open(RULE_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+# ✅ 套用規則
+def apply_rules(text: str) -> list:
+    rules = load_rules()
     issues = []
 
-    # ✅ 組合全文
-    full_text = title + "\n" + content
-    title_length = len(title)
+    for rule in rules:
 
-    # ==========
-    # 1️⃣ 標題
-    # ==========
+        # ✅ 規則開關
+        if not rule.get("enabled", True):
+            continue
 
-    title_errors = check_dictionary(title)
+        pattern = rule.get("pattern")
+        if not pattern:
+            continue
 
-    for err in title_errors:
-        start = err["position"]
-        end = start + len(err["wrong"])
+        try:
+            matches = re.finditer(pattern, text)
+        except re.error:
+            continue  # regex 錯誤時忽略
 
-        issues.append({
-            "wrong": err["wrong"],
-            "correct": err["correct"],
-            "position": start,
-            "end_position": end,
-            "section": "title",
-            "severity": assign_severity("title")
-        })
-
-    # ==========
-    # 2️⃣ 內文（算絕對位置）
-    # ==========
-
-    content_errors = check_dictionary(content)
-
-    # 判斷首段範圍
-    first_paragraph_end = content.find("\n")
-    if first_paragraph_end == -1:
-        first_paragraph_end = len(content)
-
-    for err in content_errors:
-        absolute_start = title_length + 1 + err["position"]
-        absolute_end = absolute_start + len(err["wrong"])
-
-        if err["position"] < first_paragraph_end:
-            section = "first_paragraph"
-        else:
-            section = "body"
-
-        issues.append({
-            "wrong": err["wrong"],
-            "correct": err["correct"],
-            "position": absolute_start,
-            "end_position": absolute_end,
-            "section": section,
-            "severity": assign_severity(section)
-        })
-
-    # ✅ 排序（確保依照全文順序）
-    issues.sort(key=lambda x: x["position"])
+        for match in matches:
+            issues.append({
+                "wrong": rule.get("wrong", ""),
+                "correct": rule.get("correct", ""),
+                "reason": rule.get("reason", ""),
+                "start": match.start(),
+                "end": match.end(),
+                "category": "rule",
+                "priority": rule.get("priority", 50)
+            })
 
     return issues

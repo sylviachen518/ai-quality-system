@@ -9,5 +9,11 @@ venv/
 __pycache__/
 *.pyc
 
-# PyCharm
+# IDE
 .idea/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log

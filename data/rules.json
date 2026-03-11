@@ -1,0 +1,20 @@
+[
+  {
+    "id": "rule_001",
+    "pattern": "來(了)?(一個|個).?人生奇蹟",
+    "wrong": "來",
+    "correct": "迎來",
+    "reason": "動詞與受詞搭配不自然",
+    "priority": 1,
+    "enabled": true
+  },
+  {
+    "id": "rule_002",
+    "pattern": "吃機會",
+    "wrong": "吃",
+    "correct": "把握",
+    "reason": "動詞搭配錯誤",
+    "priority": 2,
+    "enabled": true
+  }
+]
