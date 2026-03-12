@@ -13,27 +13,35 @@ router = APIRouter()
 model_router = ModelRouter()
 
 
-# ✅ ✅ 加入 mode
+# ✅ 加入 mode
 class AnalyzeRequest(BaseModel):
     text: str
     mode: Optional[str] = "normal"   # normal / hk_strict
 
 
-# ✅ 主校對模式（保守）
-HK_STRICT_PROMPT = """
+# ✅ ✅ 合併 AI 檢測 Prompt
+HK_COMBINED_PROMPT = """
 你是一個香港網站專用的繁體中文錯誤檢測工具。
 
-請檢查：
+請檢查以下錯誤：
+
+【一】基礎錯誤
 1. 錯別字
 2. 明顯語法錯誤
 3. 標點錯誤
 4. 明顯缺字
+
+【二】語義搭配錯誤
+1. 動詞與受詞搭配不合理
+2. 主詞與動作邏輯錯誤
+3. 常見搭配錯誤（例如：來一個人生奇蹟）
 
 ⚠️ 不要潤稿
 ⚠️ 不要優化文筆
 ⚠️ 不要風格建議
 ⚠️ 不要將口語改為書面語
 ⚠️ 不要因為語氣問題提出修改
+⚠️ 只指出錯誤
 
 請回傳 JSON:
 {
@@ -53,38 +61,7 @@ HK_STRICT_PROMPT = """
 """
 
 
-# ✅ 語義檢測模式
-HK_SEMANTIC_PROMPT = """
-你是一個語義搭配檢測工具。
-
-請檢查：
-1. 動詞與受詞搭配是否不合理
-2. 主詞與動作邏輯是否錯誤
-3. 常見搭配錯誤（例如：來一個人生奇蹟）
-
-⚠️ 即使不是語法錯誤，只要搭配不自然，也要指出
-⚠️ 不要潤稿
-⚠️ 只回傳錯誤
-
-請回傳 JSON:
-{
-  "errors": [
-    {
-      "wrong": "...",
-      "correct": "...",
-      "reason": "語義不合理"
-    }
-  ]
-}
-
-若無錯誤:
-{
-  "errors": []
-}
-"""
-
-
-# ✅ 簡轉繁檢測
+# ✅ 簡轉繁檢測（永遠執行）
 def detect_simplified(text):
     errors = []
     converted = cc.convert(text)
@@ -104,7 +81,7 @@ def detect_simplified(text):
     return errors
 
 
-# ✅ AI 呼叫
+# ✅ AI 呼叫（統一類型）
 def safe_ai_call(text, prompt, category):
     try:
         result = model_router.analyze(
@@ -137,7 +114,7 @@ def safe_ai_call(text, prompt, category):
                 "start": index,
                 "end": index + len(wrong),
                 "category": category,
-                "priority": 80 if category == "ai" else 90
+                "priority": 80
             })
 
         return clean
@@ -147,9 +124,8 @@ def safe_ai_call(text, prompt, category):
         return []
 
 
-# ✅ ✅ 升級版去重（安全處理 None）
+# ✅ 去重
 def deduplicate_errors(errors):
-    # 先過濾沒有 start 的（避免排序炸掉）
     errors = [e for e in errors if e.get("start") is not None]
 
     errors = sorted(
@@ -174,12 +150,11 @@ def deduplicate_errors(errors):
     return filtered
 
 
-# ✅ 排序優先級
+# ✅ 分類排序優先級
 CATEGORY_PRIORITY = {
     "tc_sc": 0,
     "rule": 1,
-    "ai": 2,
-    "semantic": 3
+    "ai": 2
 }
 
 
@@ -212,47 +187,38 @@ async def analyze(req: AnalyzeRequest):
     rule_errors = apply_rules(text)
 
     # =========================
-    # 3️⃣ 嚴格 AI（只在 hk_strict 模式）
+    # 3️⃣ AI（只在 hk_strict 模式）
     # =========================
-    strict_errors = []
+    ai_errors = []
+
     if mode == "hk_strict":
-        strict_errors = safe_ai_call(
+        ai_errors = safe_ai_call(
             text,
-            HK_STRICT_PROMPT,
+            HK_COMBINED_PROMPT,
             "ai"
         )
 
     # =========================
-    # 4️⃣ 語義 AI（永遠執行）
-    # =========================
-    semantic_errors = safe_ai_call(
-        text,
-        HK_SEMANTIC_PROMPT,
-        "semantic"
-    )
-
-    # =========================
-    # 5️⃣ 合併
+    # 4️⃣ 合併
     # =========================
     all_errors = (
         simplified_errors +
         rule_errors +
-        strict_errors +
-        semantic_errors
+        ai_errors
     )
 
     # =========================
-    # 6️⃣ 去重
+    # 5️⃣ 去重
     # =========================
     all_errors = deduplicate_errors(all_errors)
 
     # =========================
-    # 7️⃣ 排序
+    # 6️⃣ 排序
     # =========================
     all_errors = sort_errors(all_errors)
 
     # =========================
-    # 8️⃣ 白名單
+    # 7️⃣ 白名單
     # =========================
     filtered_errors = apply_whitelist(all_errors, text)
 
