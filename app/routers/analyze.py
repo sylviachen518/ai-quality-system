@@ -61,6 +61,21 @@ HK_COMBINED_PROMPT = """
 """
 
 
+# ✅ ✅ 新增：找出所有出現位置
+def find_all_occurrences(text, substring):
+    start = 0
+    positions = []
+
+    while True:
+        index = text.find(substring, start)
+        if index == -1:
+            break
+        positions.append(index)
+        start = index + len(substring)
+
+    return positions
+
+
 # ✅ 簡轉繁檢測（永遠執行）
 def detect_simplified(text):
     errors = []
@@ -102,20 +117,19 @@ def safe_ai_call(text, prompt, category):
             if not wrong or not correct:
                 continue
 
-            index = text.find(wrong)
+            # ✅ 改這裡：找全部出現位置
+            positions = find_all_occurrences(text, wrong)
 
-            if index == -1:
-                continue
-
-            clean.append({
-                "wrong": wrong,
-                "correct": correct,
-                "reason": err.get("reason", ""),
-                "start": index,
-                "end": index + len(wrong),
-                "category": category,
-                "priority": 80
-            })
+            for index in positions:
+                clean.append({
+                    "wrong": wrong,
+                    "correct": correct,
+                    "reason": err.get("reason", ""),
+                    "start": index,
+                    "end": index + len(wrong),
+                    "category": category,
+                    "priority": 80
+                })
 
         return clean
 
@@ -176,21 +190,10 @@ async def analyze(req: AnalyzeRequest):
     text = req.text
     mode = req.mode or "normal"
 
-    # =========================
-    # 1️⃣ 簡轉繁檢查（永遠執行）
-    # =========================
     simplified_errors = detect_simplified(text)
-
-    # =========================
-    # 2️⃣ Rule engine（永遠執行）
-    # =========================
     rule_errors = apply_rules(text)
 
-    # =========================
-    # 3️⃣ AI（只在 hk_strict 模式）
-    # =========================
     ai_errors = []
-
     if mode == "hk_strict":
         ai_errors = safe_ai_call(
             text,
@@ -198,28 +201,14 @@ async def analyze(req: AnalyzeRequest):
             "ai"
         )
 
-    # =========================
-    # 4️⃣ 合併
-    # =========================
     all_errors = (
         simplified_errors +
         rule_errors +
         ai_errors
     )
 
-    # =========================
-    # 5️⃣ 去重
-    # =========================
     all_errors = deduplicate_errors(all_errors)
-
-    # =========================
-    # 6️⃣ 排序
-    # =========================
     all_errors = sort_errors(all_errors)
-
-    # =========================
-    # 7️⃣ 白名單
-    # =========================
     filtered_errors = apply_whitelist(all_errors, text)
 
     return {
